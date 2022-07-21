@@ -20,7 +20,9 @@ namespace CoVayServer
 
         public BinaryWriter writer;
 
-        public List<Message> ListMessage;
+        public List<Message> ListMessage = new List<Message>();
+
+        public List<Message> ListMessageProcess = new List<Message>();
 
         public bool Isblack;
 
@@ -37,7 +39,6 @@ namespace CoVayServer
             reader = new BinaryReader(stream, new UTF8Encoding());
             writer = new BinaryWriter(stream, new UTF8Encoding());
             roomNumber = -1;
-            ListMessage = new List<Message>();
         }
 
         public void AddMessage(Message m)

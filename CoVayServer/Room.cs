@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using System.Threading;
 using System.Net.Sockets;
 using System.IO;
-using System.Windows.Forms;
 
 namespace CoVayServer
 {
@@ -64,10 +63,6 @@ namespace CoVayServer
             }
         }
 
-        /// <summary>
-        /// Gửi Message của 1 client cho các client trong room
-        /// </summary>
-        /// <param name="mess"></param>
         public void SendChat(string mess)
         {
             foreach (Player player1 in ListPlayerinRoom)
@@ -82,9 +77,6 @@ namespace CoVayServer
             }
         }
 
-        /// <summary>
-        /// Gửi vị trí các quân cờ cho các client trong bàn cờ
-        /// </summary>
         public void SendBoard()
         {
             int n = ConstNumber.linenum + 1;

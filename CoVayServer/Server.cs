@@ -1,82 +1,70 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
-using System.Net.NetworkInformation;
-using System.Web;
 
 namespace CoVayServer
 {
-    public partial class Server : Form
+    public class Server
     {
-        public static List<Player> ListPlayer; //Danh sách player
+        public static List<Player> ListPlayer;
 
         public bool listen;
 
-        public static List<Room> ListRoom; //Danh sách Room
+        public static List<Room> ListRoom;
 
-        public Server()
+        public static void Main()
         {
-            InitializeComponent();
+            new Server().Run();
         }
 
-        private void Server_Load(object sender, EventArgs e)
-        {
-            IPHostEntry host = Dns.GetHostEntry(Dns.GetHostName());
-            foreach (IPAddress ip in host.AddressList) //Hiển thị các địa chỉ ip có thể connect đến server
-            {
-                if (ip.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    string str = "Server turning on: " + ip.ToString() + ":8888";
-                    AddTextOutput(str);
-                }
-            }
-            //Tạo luồng nhận lắng nghe kết nối từ client
-            Thread thread = new Thread(Listen);
-            thread.Start();
-        }
-
-        /// <summary>
-        /// Lắng nghe kết nối từ client
-        /// </summary>
-        public void Listen()
+        public void Run()
         {
             ListPlayer = new List<Player>();
             ListRoom = new List<Room>();
             listen = true;
-            new Thread(Update).Start(); //Khởi chạy luồng update
+            new Thread(UpdateServer).Start();
             TcpListener tcpListener = new TcpListener(IPAddress.Any, 8888);
             tcpListener.Start();
 
             while (listen)
             {
-                //Khi có 1 client kết nối đến tcpclient sẽ được tạo
                 TcpClient tcpClient = tcpListener.AcceptTcpClient();
 
-                //Tạo 1 player , player này sẽ là đóng vai trò như 1 client để Server tương tác
                 Player player = new Player(tcpClient);
 
-                //Thêm player vào danh sách
                 ListPlayer.Add(player);
 
-                new Thread(SendMsg).Start(player); //Tạo luồng gửi Msg cho client
-                new Thread(ReceiveMsg).Start(player); //Tạo luồng nhận Msg client gửi
+                new Thread(SendMsg).Start(player);
+                new Thread(ReceiveMsg).Start(player);
+                new Thread(ProcessMessage).Start(player);
             }
         }
 
-        /// <summary>
-        /// Gửi Msg cho client
-        /// </summary>
-        /// <param name="obj"></param>
+        public void ProcessMessage(object obj)
+        {
+            Player player = (Player)obj;
+            while (player.tcpClient.Connected)
+            {
+                if (player.ListMessageProcess.Count > 0)
+                {
+                    try
+                    {
+                        Message m = player.ListMessageProcess[0];
+                        player.ListMessageProcess.RemoveAt(0);
+                        ProcessMsg(m, player);
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e.Message);
+                        Console.WriteLine("Loi gui Msg");
+                    }
+                }
+                Thread.Sleep(10);
+            }
+        }
+
         public void SendMsg(object obj)
         {
             Player player = (Player)obj;
@@ -92,7 +80,6 @@ namespace CoVayServer
                         player.writer.Write(data.Length);
                         player.writer.Write(m.cmd);
                         player.writer.Write(data);
-                        player.writer.Flush();
                     }
                     catch (Exception e)
                     {
@@ -104,10 +91,6 @@ namespace CoVayServer
             }
         }
 
-        /// <summary>
-        /// Nhận Msg từ client
-        /// </summary>
-        /// <param name="obj"></param>
         public void ReceiveMsg(object obj)
         {
             Player player = (Player)obj;
@@ -119,7 +102,7 @@ namespace CoVayServer
                     int cmd = player.reader.ReadInt32();
                     byte[] data = player.reader.ReadBytes(length);
                     Message m = new Message(cmd, data);
-                    ProcessMsg(m, player);
+                    player.ListMessageProcess.Add(m);
                 }
                 catch (Exception e)
                 {
@@ -127,24 +110,19 @@ namespace CoVayServer
                     Console.WriteLine(e.Message);
                     Console.WriteLine("Loi nhan Msg");
                 }
-                Thread.Sleep(10);
             }
         }
 
-        /// <summary>
-        /// Luồng update
-        /// </summary>
-        public new void Update()
+        public void UpdateServer()
         {
             while (listen)
             {
                 UpdateListRoom();
                 UpdateListPlayer();
-                Thread.Sleep(1000); //Sau mỗi 1s các lệnh bên trên được thực hiện lại
+                Thread.Sleep(100);
             }
         }
 
-        //Cập nhật danh sách player
         public void UpdateListPlayer()
         {
             lock (ListPlayer)
@@ -192,9 +170,6 @@ namespace CoVayServer
             }
         }
 
-        /// <summary>
-        /// Gửi danh sách Room
-        /// </summary>
         public void SendListRoom(Player player)
         {
             try
@@ -212,11 +187,6 @@ namespace CoVayServer
             catch { }
         }
 
-        /// <summary>
-        /// Hiển thị MessBox bên client bằng server
-        /// </summary>
-        /// <param name="mess"></param>
-        /// <param name="player"></param>
         public void SendMessageBox(string mess, Player player)
         {
             try
@@ -228,10 +198,6 @@ namespace CoVayServer
             catch { }
         }
 
-        /// <summary>
-        /// Gửi lệnh để client hiển thị form bàn cờ bên client
-        /// </summary>
-        /// <param name="player"></param>
         public void SendShowBoard(Player player)
         {
             try
@@ -243,14 +209,8 @@ namespace CoVayServer
             catch { }
         }
 
-        /// <summary>
-        /// Xử lý dữ liệu từ client
-        /// </summary>
-        /// <param name="m"></param>
-        /// <param name="player"></param>
         public void ProcessMsg(Message m, Player player)
         {
-            //Dựa vào kí hiệu mà Client gửi đến sẽ có các cách xử lý khác nhau
             switch (m.cmd)
             {
                 case 0: //Set tên player
@@ -268,14 +228,12 @@ namespace CoVayServer
                         break;
                     }
 
-                    //Nếu trận đấu chưa bắt đầu thì không thực hiện các câu lệnh bên dưới
                     if (!room4.Fight)
                     {
                         SendMessageBox("Trận đấu chưa bắt đầu", player);
                         break;
                     }
 
-                    //Nếu player chưa đến lượt player đánh thì không thực hiện các câu lệnh bên dưới
                     if (!player.inTurn)
                     {
                         SendMessageBox("Chưa đến lượt bạn", player);
@@ -285,7 +243,6 @@ namespace CoVayServer
                     int x = m.reader.ReadInt32();
                     int y = m.reader.ReadInt32();
 
-                    //Nếu như đặt quân cờ không thỏa các điều kiện luật thì break
                     if (!room4.board.SetStone(player.Isblack, x, y))
                     {
                         break;
@@ -293,10 +250,8 @@ namespace CoVayServer
 
                     room4.CountSkipTurn = 0;
 
-                    //Bỏ lượt đánh của player
                     player.inTurn = false;
 
-                    //Set lượt đánh của player khác trong room
                     foreach (Player player1 in room4.ListPlayerinRoom)
                     {
                         if (player1 != player)
@@ -333,12 +288,12 @@ namespace CoVayServer
                     {
                         break;
                     }
-                    if (!room5.Fight) //Trận đấu chưa bắt đầu mà nhấn bỏ lượt thì break
+                    if (!room5.Fight) 
                     {
                         SendMessageBox("Trận đấu chưa bắt đầu", player);
                         break;
                     }
-                    if (!player.inTurn) //Nếu player không phải là người đánh mà nhấn bỏ lượt thì break
+                    if (!player.inTurn)
                     {
                         SendMessageBox("Chưa đến lượt bạn, không thể bỏ lượt", player);
                         break;
@@ -346,7 +301,7 @@ namespace CoVayServer
                     player.inTurn = false;
 
                     string mess3 = player.name + " ĐÃ BỎ LƯỢT";
-                    room5.SendChat(mess3); //Gửi mess hiển thị player này bỏ lượt cho player khác
+                    room5.SendChat(mess3); 
 
                     room5.CountSkipTurn++;
 
@@ -360,7 +315,7 @@ namespace CoVayServer
 
                     room5.threadTimeOut.Reset();
 
-                    //Set lại lượt đánh cho player khác
+                    
                     foreach (Player player1 in room5.ListPlayerinRoom)
                     {
                         if (player1 != player)
@@ -381,16 +336,16 @@ namespace CoVayServer
                     int int3 = 1;
                     for (int i = 1; i < 100; i++)
                     {
-                        if (!CheckNumRoom(i)) //Kiểm tra số phòng có bị trùng
+                        if (!CheckNumRoom(i))
                         {
                             int3 = i;
                             break;
                         }
                     }
-                    Room room = new Room(int3, player); //Tạo phòng mới
-                    player.roomNumber = room.RoomNumber; //Set số phòng cho player
+                    Room room = new Room(int3, player);
+                    player.roomNumber = room.RoomNumber; 
 
-                    ListRoom.Add(room); //Thêm phòng này vào danh sách
+                    ListRoom.Add(room); 
 
                     SendShowBoard(player);
 
@@ -409,7 +364,7 @@ namespace CoVayServer
                         break;
                     }
 
-                    if (player.readyFight) //player đã sẵn sàng
+                    if (player.readyFight)
                     {
                         SendMessageBox("Bạn đã sẵn sàng rồi", player);
                         break;
@@ -417,22 +372,22 @@ namespace CoVayServer
 
                     player.readyFight = true;
                     string mess = player.name + " ĐÃ SẴN SÀNG";
-                    room6.SendChat(mess); //Gửi tin nhắn đã sẵn sàng
+                    room6.SendChat(mess);
 
-                    if (room6.CountReady == 0) //Player sẵn sàng đầu tiên là quân đen, đánh lượt đầu
+                    if (room6.CountReady == 0)
                     {
                         player.Isblack = true;
                         player.inTurn = true;
                         room6.CountReady++;
                     }
-                    else                    //Player sẵn sàng kế là quân trắng, đánh lượt sau
+                    else                    
                     {
                         player.Isblack = false;
                         player.inTurn = false;
                         room6.CountReady++;
                     }
 
-                    if (room6.CountReady == 2) //Nếu 2 Player sẵn sàng thì bắt đầu ván đấu
+                    if (room6.CountReady == 2)
                     {
                         room6.Fight = true;
                         room6.board = new Board(); //Tạo bàn cờ
@@ -460,7 +415,7 @@ namespace CoVayServer
                         break;
                     }
 
-                    if (room7.ListPlayerinRoom.Count >= 2) //Nếu phòng đã có 2 người hoặc nhiều hơn thì k cho vào nữa
+                    if (room7.ListPlayerinRoom.Count >= 2)
                     {
                         SendMessageBox("Phòng đã đầy", player);
                         break;
@@ -511,11 +466,6 @@ namespace CoVayServer
             }
         }
 
-        /// <summary>
-        /// Kiểm tra player này có đang ở trong 1 room nào đó
-        /// </summary>
-        /// <param name="player"></param>
-        /// <returns>true nếu player này đang ở trong 1 phòng nào đó</returns>
         public bool CheckPlayerinOtherRoom(Player player)
         {
             foreach (Room room1 in ListRoom)
@@ -531,11 +481,6 @@ namespace CoVayServer
             return false;
         }
 
-        /// <summary>
-        /// Nhận về Room trong listRoom bằng số phòng
-        /// </summary>
-        /// <param name="RoomNum"></param>
-        /// <returns>Room trong ListRoom, null nếu không tìm thấy</returns>
         public static Room GetRoom(int RoomNum)
         {
             foreach (Room room in ListRoom)
@@ -548,11 +493,6 @@ namespace CoVayServer
             return null;
         }
 
-        /// <summary>
-        /// Kiểm tra số phòng có bị trùng
-        /// </summary>
-        /// <param name="num"></param>
-        /// <returns>true nếu đã sử dụng, false ngược lại</returns>
         public bool CheckNumRoom(int num)
         {
             foreach (Room room in ListRoom)
@@ -565,41 +505,9 @@ namespace CoVayServer
             return false;
         }
 
-        /// <summary>
-        /// Thêm output vào ListBoxOut
-        /// </summary>
-        /// <param name="cmd"></param>
         public void AddTextOutput(string cmd)
         {
-            richTextBoxOutput.BeginInvoke(new Action(() =>
-            {
-                richTextBoxOutput.Text += "> " + cmd + "\n";
-            }));
-        }
-
-
-        /// <summary>
-        /// Đóng server
-        /// </summary>
-        public void StopServer()
-        {
-            listen = false;
-            Environment.Exit(0);
-        }
-
-        // Sự kiện khi nhân nút X
-        private void Server_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            DialogResult dialog;
-            dialog = MessageBox.Show("Bạn có muốn tắt server?", "", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (dialog == DialogResult.Yes)
-            {
-                StopServer();
-            }
-            else
-            {
-                e.Cancel = true; //Nếu nhấn nút No thì không tắt
-            }
+            Console.Out.WriteLine(cmd);
         }
     }
 }
