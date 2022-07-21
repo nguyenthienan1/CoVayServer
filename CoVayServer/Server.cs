@@ -17,6 +17,7 @@ namespace CoVayServer
         public static void Main()
         {
             new Server().Run();
+            Environment.Exit(0);
         }
 
         public void Run()
